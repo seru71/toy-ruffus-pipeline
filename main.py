@@ -5,24 +5,41 @@ import pathlib
 import shutil
 import ruffus.cmdline as cmdline
 from ruffus import originate, transform, suffix, mkdir, posttask, follows
-from ruffus.drmaa_wrapper import run_job, error_drmaa_job
+from mnm_drmaa_wrapper import run_job, error_drmaa_job
 
 #
 # Uncomment if you need to test drmaa (needs installation of OS package: slurm-drmaa)
 #
-# try:
-#     import drmaa
-#     session = drmaa.Session()
-#     session.initialize()
-# except Exception:
-#     pass
-# except OSError:
-#     pass
+try:
+    import drmaa
+    session = drmaa.Session()
+    session.initialize()
+except Exception:
+    print( "DRMAA not imported" )
+    pass
+except OSError:
+    print( "DRMAA not imported" )
+    pass
 
 
-def run_slurm_job(cmd, **args):
+def run_slurm_job(cmd, script_dir,
+                  cpus=1, mem_per_cpu=1024, walltime="00:01:00",
+                  qos="", partition="", **args):
+
+    job_options = ("{qos} {partition} --ntasks=1" +
+                   " --cpus-per-task={cpus}" +
+                   " --mem-per-cpu={mem}" +
+                   " --time={time}"
+                   ).format(cpus=cpus, mem=int(1.2 * mem_per_cpu), time=walltime,
+                            qos=qos, partition=partition)
+
+    stdout_res, stderr_res = "" ,""
     try:
         stdout_res, stderr_res = run_job(cmd,
+                                         job_name="toy",
+                                         job_other_options=job_options,
+                                         retain_job_scripts=True,
+                                         job_script_directory=script_dir,
                                          logger=logger,
                                          drmaa_session=session,
                                          run_locally=False,
@@ -73,7 +90,7 @@ def process_input_in_python(inputf, outputf):
     value=-1
     with open(inputf, 'r') as f:
         value = int(f.readline().strip())
-    #print(outputf)
+    print(outputf)
     time.sleep(5)
     with open(outputf, 'w') as f:
         f.write(str(value**2))
@@ -87,10 +104,13 @@ def process_input_using_awk(inputf, outputf):
     :param outputf: file to save squere to
     :return: void
     """
-    cmd = "sleep 5; awk '{print $1*$1}' " + ("{} > {}").format(inputf, outputf)
+    cmd = "sleep 5;\n awk '{print $1*$1}' " + \
+          ("{} > {};\n").format(inputf, outputf)
+    script_dir = os.path.join(os.path.dirname(inputf), 'drmaa')
+
     print(outputf)
-    run_job(cmd, run_locally=True)
-    #run_slurm_job(cmd) # will need drmaa and running on a SLURM submission node
+    #run_job(cmd, run_locally=True)
+    run_slurm_job(cmd, script_dir) # will need drmaa and running on a SLURM submission node
 
 
 def rm_path():
@@ -101,9 +121,10 @@ def rm_path():
     shutil.rmtree(options.input_path)
 
 
-@follows(process_input_in_python, process_input_using_awk)
-#@posttask(lambda: shutil.rmtree(options.input_path))
-@posttask(rm_path)
+#@follows(process_input_in_python, process_input_using_awk)
+@follows(process_input_using_awk)
+@posttask(lambda: shutil.rmtree(options.input_path))
+#@posttask(rm_path)
 def complete_run():
     """ Aggregates the two processing tasks """
     pass
@@ -121,10 +142,10 @@ print(end - start)
 #
 # Uncomment if you need to test drmaa (needs installation of OS package: slurm-drmaa)
 #
-# try:
-#     session.exit()
-# except Exception:
-#     pass
+try:
+    session.exit()
+except Exception:
+    pass
 
 #
 # Example runs:
