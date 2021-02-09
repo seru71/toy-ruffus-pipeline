@@ -244,30 +244,9 @@ def write_job_script_to_temp_file(cmd_str, job_script_directory, job_name, job_o
     return (job_script_path, stdout_path, stderr_path)
 
 
-def retry_drmaa_run_job(drmaa_session, job_template, logger,
-                        max_attempts=5, timeout=10):
-    """ Will attempt to submit a job max_attempt times """
-    attempt=1
-    while attempt <= max_attempts:
-        try:
-            jobid = drmaa_session.runJob(job_template)
-            return jobid
-        except drmaa.errors.DrmCommunicationException as e:
-            if logger:
-                logger.debug(e)
-            if attempt < max_attempts:
-                attempt += 1
-                gevent.sleep(timeout)
-                if logger:
-                    logger.info(f"DRMAA_wrapper retrying to submit a job: attempt {attempt} in {max_attempts}.")
-                continue
-            else:
-                raise e
-
-
 def submit_drmaa_job(cmd_str, drmaa_session, job_template, logger, pipeline):
 
-    jobid = retry_drmaa_run_job(drmaa_session, job_template, logger)
+    jobid = drmaa_session.runJob(job_template)
     if logger:
         logger.debug("job has been submitted with jobid {}".format(jobid))
 
@@ -281,19 +260,19 @@ def submit_drmaa_job(cmd_str, drmaa_session, job_template, logger, pipeline):
 
     job_info = None
     is_suspended = False
+    attempts = 1
     while True:
         try:
-            attempts = 1
             status = drmaa_session.jobStatus(jobid)
             logger.debug("status of job with jobid {} {}".format(jobid, status))
         except drmaa.errors.DrmCommunicationException as e:
             if logger:
                 logger.debug(e)
             if (attempts < MAX_JOBSTATUS_ATTEMPTS):
-                attempts += 1
-                gevent.sleep(JOBSTATUS_FAILED_TIMEOUT)
                 if logger:
                     logger.info(f"DRMAA_wrapper retrying to obtain job status: attempt {attempts} in {MAX_JOBSTATUS_ATTEMPTS}.")
+                attempts += 1
+                gevent.sleep(JOBSTATUS_FAILED_TIMEOUT)
                 continue
             else:
                 raise e
@@ -369,6 +348,7 @@ def run_job_using_drmaa(cmd_str, job_name=None, job_other_options=None,
     job_template.errorPath = ":" + stderr_path
 
     # Run job and wait
+    jobid = None
     if resubmit:
         exitStatus = 1
         jobCount = 0
@@ -385,6 +365,7 @@ def run_job_using_drmaa(cmd_str, job_name=None, job_other_options=None,
                     else:
                         if logger:
                             logger.debug("job %s exited normally" % str(jobid))
+                break
             except Exception as err:
                 if logger:
                     logger.debug(err)
@@ -394,6 +375,9 @@ def run_job_using_drmaa(cmd_str, job_name=None, job_other_options=None,
             if logger and exitStatus:
                 logger.debug(
                     "Resubmitting job, resubmission count is %d" % jobCount)
+
+        if not jobid:
+            raise error_drmaa_job("Job could not be submitted within %d attempts" % resubmit)
     else:
         jobid, job_info = submit_drmaa_job(
             cmd_str, drmaa_session, job_template, logger, pipeline)
