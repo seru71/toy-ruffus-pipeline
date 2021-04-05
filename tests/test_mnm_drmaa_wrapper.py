@@ -1,15 +1,14 @@
-import drmaa
-import unittest
 from unittest.mock import Mock
+import unittest
+
+import drmaa
 import mnm_drmaa_wrapper
 from mnm_drmaa_wrapper import submit_drmaa_job, run_job_using_drmaa
-
 
 # reduce waiting times for tests
 mnm_drmaa_wrapper.GEVENT_TIMEOUT_WAIT = 0
 mnm_drmaa_wrapper.GEVENT_TIMEOUT_STARTUP = 0
 mnm_drmaa_wrapper.JOBSTATUS_FAILED_TIMEOUT = 0
-
 
 
 class SubmitDrmaaJobTests(unittest.TestCase):
